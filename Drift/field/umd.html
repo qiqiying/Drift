@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cesium wind</title>
+<!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.73.0/Build/Cesium/Widgets/widgets.css"> -->
+<style type="text/css">
+    @import url(../bucket.css);
+    html,
+    body {
+        margin: 0;
+        height: 100%;
+        width: 100%
+    }
+    
+    .container {
+        width: 100%;
+        height: 100%
+    }
+    
+    #toolbar {
+        background: rgba(0, 0, 0, 0.7);
+        /* padding: 4px;
+            border-radius: 4px; */
+        top: 50px;
+        margin: 0px;
+        z-index: 999;
+    }
+    
+    .moveGUI {
+        position: absolute;
+        top: 2em;
+        left: 1em;
+        z-index: 999
+    }
+</style>
+
+<body>
+    <div class='moveGUI'>
+    </div>
+    <div id="map" class="container"></div>
+
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.88/Build/Cesium/Cesium.js"></script>
+    <script src="./js/cesium-wind.js"></script>
+    <script src="./js/dat.gui.js"></script>
+    <script src="./js/jquery.min.js"></script>
+    <script src="https://spectorcdn.babylonjs.com/spector.bundle.js"></script>
+
+    <script>
+        Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjYjZiMzA4Mi1lZGYzLTQ5MTMtYjE4Ny02NjYwZjVlZjQ0MGUiLCJpZCI6NDQ5MTEsImlhdCI6MTYxNDU4MTIzNH0.x1QYKlHj6mOMRIqVXeZ1gMt0akK1eMaLqJhaEYsz27Y';
+        var viewer = new Cesium.Viewer('map', {
+            homeButton: true,
+            animation: false,
+            timeline: false,
+            infoBox: false,
+            selectionIndicator: false,
+            baseLayerPicker: true,
+            imageryProvider:
+            /* new Cesium.SingleTileImageryProvider({
+                           url: '../world.jpg'
+                       }), */
+                new Cesium.OpenStreetMapImageryProvider({
+                url: 'https://a.tile.openstreetmap.org/'
+            }),
+            //terrainProviderViewModels: [],
+            terrainProvider: new Cesium.CesiumTerrainProvider({
+                url: Cesium.IonResource.fromAssetId(638077),
+            }),
+            geocoder: false,
+            vrButton: false,
+            navigationHelpButton: false,
+            //mapProjection: new Cesium.WebMercatorProjection(),
+            sceneMode: Cesium.SceneMode.SCENE3D,
+        });
+        viewer.camera.setView({
+            destination: Cesium.Cartesian3.fromDegrees(120, 30, 7000000)
+        });
+
+        /* viewer.imageryLayers.removeAll();
+                        viewer.imageryLayers.addImageryProvider(new Cesium.TileMapServiceImageryProvider({
+                            url: Cesium.buildModuleUrl("../Cesium/Assets/Textures/NaturalEarthII"),
+                        })); */
+
+        /* viewer.scene.skyAtmosphere.show = false;
+        viewer.scene.globe.showGroundAtmosphere = false; */
+        /*********透明*********/
+        /* viewer.scene.globe.undergroundColor = Cesium.Color.TRANSPARENT;
+        viewer.scene.globe.baseColor = Cesium.Color.TRANSPARENT;
+        viewer.scene.globe.translucency.enabled = true;
+        viewer.scene.imageryLayers.get(0).colorToAlpha = new Cesium.Color(0.0, 0.0, 0.0);
+        viewer.scene.imageryLayers.get(0).colorToAlphaThreshold = 0.02; */
+
+        let chooseVector = 'wind'
+
+        function vector() {
+            chooseVector = ASSETS.chooseVector
+            console.log(chooseVector)
+            windLayer.removeLayer()
+            init()
+        }
+
+        let chooseDaynight = 'day'
+
+        function daynight() {
+            chooseDaynight = ASSETS.chooseDaynight
+            if (chooseDaynight === 'day') {
+                viewer.imageryLayers.removeAll();
+                if (chooseVector === 'wind') {
+                    viewer.imageryLayers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({
+                        url: 'https://a.tile.openstreetmap.org/'
+                    }));
+                } else {
+                    viewer.imageryLayers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({
+                        url: 'https://stamen-tiles.a.ssl.fastly.net/watercolor/',
+                        fileExtension: 'jpg',
+                        credit: 'Map tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap, under CC BY SA.'
+                    }));
+                }
+            } else {
+                viewer.imageryLayers.removeAll();
+                viewer.imageryLayers.addImageryProvider(new Cesium.SingleTileImageryProvider({
+                    url: '../world.jpg'
+                }));
+            }
+            console.log(chooseDaynight)
+            windLayer.removeLayer()
+            init()
+        }
+
+        let height = 0
+
+        function setHeight() {
+            height = +(document.getElementById('height').value)
+        }
+
+        let windLayerGroup = []
+        let isBoth = false
+
+        function Both() {
+            if (!isBoth) {
+                isBoth = true
+                viewer.imageryLayers.removeAll();
+                viewer.imageryLayers.addImageryProvider(new Cesium.SingleTileImageryProvider({
+                    url: '../world.jpg'
+                }));
+                windLayer.removeLayer()
+                windLayer = null
+                init2wind()
+            } else {
+                isBoth = false
+                for (let i = 0; i < windLayerGroup.length; i++) {
+                    windLayerGroup[i].removeLayer()
+                }
+                windLayerGroup = []
+                init()
+            }
+        }
+
+        let isCurrentBoth = false
+
+        function CurrentBoth() {
+            if (!isCurrentBoth) {
+                isCurrentBoth = true
+                viewer.imageryLayers.removeAll();
+                viewer.imageryLayers.addImageryProvider(new Cesium.SingleTileImageryProvider({
+                    url: '../world.jpg'
+                }));
+                windLayer.removeLayer()
+                windLayer = null
+                init2current()
+            } else {
+                iscurrent = false
+                isCurrentBoth = false
+                currentLayer1.removeLayer()
+                currentLayer1 = null
+                currentLayer2.removeLayer()
+                currentLayer2 = null
+                init()
+            }
+        }
+
+        var animate = function() {
+            viewer.resize();
+            viewer.render();
+            requestAnimationFrame(animate);
+        }
+        var spector = new SPECTOR.Spector();
+        spector.displayUI();
+        spector.spyCanvases();
+        animate();
+
+        init()
+        var windLayer
+
+        function init() {
+            if (chooseDaynight === 'day') {
+                viewer.imageryLayers.removeAll();
+                if (chooseVector === 'wind') {
+                    viewer.imageryLayers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({
+                        url: 'https://a.tile.openstreetmap.org/'
+                    }));
+                } else {
+                    viewer.imageryLayers.addImageryProvider(new Cesium.OpenStreetMapImageryProvider({
+                        url: 'https://stamen-tiles.a.ssl.fastly.net/watercolor/',
+                        fileExtension: 'jpg',
+                        credit: 'Map tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap, under CC BY SA.'
+                    }));
+                }
+            } else {
+                viewer.imageryLayers.removeAll();
+                viewer.imageryLayers.addImageryProvider(new Cesium.SingleTileImageryProvider({
+                    url: '../world.jpg'
+                }));
+            }
+
+            function hexToR(h) {
+                return parseInt((cutHex(h)).substring(0, 2), 16)
+            }
+
+            function hexToG(h) {
+                return parseInt((cutHex(h)).substring(2, 4), 16)
+            }
+
+            function hexToB(h) {
+                return parseInt((cutHex(h)).substring(4, 6), 16)
+            }
+
+            function cutHex(h) {
+                return (h.charAt(0) == "#") ? h.substring(1, 7) : h
+            }
+            var windOptions
+            let chooses = chooseDaynight + chooseVector
+            switch (chooses) {
+                case "daywind":
+                    windOptions = {
+                        colorScale: [
+                            //黄红
+                            /* 'rgb(255,255,0)',
+                            'rgb(255,200,0)',
+                            'rgb(255,150,0)',
+                            'rgb(255,100,0)',
+                            'rgb(255,75,0)',
+                            'rgb(255,50,0)',
+                            'rgb(255,25,0)',
+                            'rgb(255,0,0)' */
+                            //青绿，粉红
+                            /* "rgb(77,172,38)", "rgb(184,225,134)", "rgb(241,182,218)", "rgb(208,28,139)" */
+                            //骚红
+                            /* 'rgb(254,235,226)', 'rgb(251,180,185)', 'rgb(247,104,161)', 'rgb(174,1,126)' */
+                            //咖啡
+                            /* 'rgb(255,255,212)', 'rgb(254,217,142)', 'rgb(254,153,41)', 'rgb(204,76,2)' */
+                            //红
+                            /* 'rgb(255,245,240)', 'rgb(254,224,210)',  */
+                            //'rgb(252,187,161)', 'rgb(252,146,114)', 'rgb(251,106,74)', 'rgb(239,59,44)', 'rgb(203,24,29)', 'rgb(153,0,13)'
+                            //暗黑
+                            "rgba(" + hexToR('#178be7') + ", " + hexToG('#178be7') + ", " + hexToB('#178be7') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#8888bd') + ", " + hexToG('#8888bd') + ", " + hexToB('#8888bd') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#b28499') + ", " + hexToG('#b28499') + ", " + hexToB('#b28499') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#cc7e78') + ", " + hexToG('#cc7e78') + ", " + hexToB('#cc7e78') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#de765b') + ", " + hexToG('#de765b') + ", " + hexToB('#de765b') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#ec6c42') + ", " + hexToG('#ec6c42') + ", " + hexToB('#ec6c42') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#f55f2c') + ", " + hexToG('#f55f2c') + ", " + hexToB('#f55f2c') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#fb4f17') + ", " + hexToG('#fb4f17') + ", " + hexToB('#fb4f17') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#fe3705') + ", " + hexToG('#fe3705') + ", " + hexToB('#fe3705') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#ff0000') + ", " + hexToG('#ff0000') + ", " + hexToB('#ff0000') + ", " + 1 + ")"
+                        ],
+                        frameRate: 1,
+                        maxAge: 60,
+                        globalAlpha: 0.95,
+                        velocityScale: 1 / 30,
+                        paths: 3000,
+                        lineWidth: 1.5
+                    }
+                    break;
+                case "nightwind":
+                    windOptions = {
+                        colorScale: [
+                            'rgb(247,251,255)', 'rgb(222,235,247)', 'rgb(198,219,239)', 'rgb(158,202,225)', 'rgb(107,174,214)', 'rgb(66,146,198)', 'rgb(66,146,198)', 'rgb(33,113,181)', 'rgb(33,113,181)', 'rgb(8,69,148)', 'rgb(8,69,148)'
+                        ],
+                        frameRate: 1,
+                        maxAge: 60,
+                        globalAlpha: 0.95,
+                        velocityScale: 1 / 30,
+                        paths: 3000,
+                        lineWidth: 1.5
+                    }
+                    break;
+                case "daycurrent":
+                    windOptions = {
+                        colorScale: [
+                            'rgba(255,255,255,0.2)',
+                            'rgba(255,255,255,0.4)',
+                            'rgba(255,255,255,0.7)',
+                            'rgba(255,255,255,0.8)',
+                            'rgba(255,255,255,1.0)',
+                        ],
+                        frameRate: 1,
+                        maxAge: 60,
+                        globalAlpha: 0.98,
+                        velocityScale: 1,
+                        paths: 3000
+                    }
+                    break;
+                case "nightcurrent":
+                    windOptions = {
+                        colorScale: [
+                            "rgba(" + hexToR('#178be7') + ", " + hexToG('#178be7') + ", " + hexToB('#178be7') + ", " + 0.2 + ")",
+                            "rgba(" + hexToR('#178be7') + ", " + hexToG('#178be7') + ", " + hexToB('#178be7') + ", " + 0.4 + ")",
+                            "rgba(" + hexToR('#178be7') + ", " + hexToG('#178be7') + ", " + hexToB('#178be7') + ", " + 0.7 + ")",
+                            "rgba(" + hexToR('#178be7') + ", " + hexToG('#178be7') + ", " + hexToB('#178be7') + ", " + 0.8 + ")",
+                            "rgba(" + hexToR('#178be7') + ", " + hexToG('#178be7') + ", " + hexToB('#178be7') + ", " + 1 + ")"
+                        ],
+                        frameRate: 1,
+                        maxAge: 60,
+                        globalAlpha: 0.98,
+                        velocityScale: 1,
+                        paths: 3000
+                    }
+                    break;
+                default:
+                    break;
+            }
+
+
+            let url = './data/' + chooseVector + '.json'
+            fetch(url)
+                .then(res => res.json())
+                .then(res => {
+                    windLayer = new CesiumWind.WindLayer(res, {
+                        windOptions
+                    });
+                    windLayer.addTo(viewer);
+                });
+        }
+
+
+
+        function init2wind() {
+            iscurrent = false
+
+            function hexToR(h) {
+                return parseInt((cutHex(h)).substring(0, 2), 16)
+            }
+
+            function hexToG(h) {
+                return parseInt((cutHex(h)).substring(2, 4), 16)
+            }
+
+            function hexToB(h) {
+                return parseInt((cutHex(h)).substring(4, 6), 16)
+            }
+
+            function cutHex(h) {
+                return (h.charAt(0) == "#") ? h.substring(1, 7) : h
+            }
+            /* let colorBar = [
+                'rgba(255,245,240,0.2)',
+                'rgba(254,224,210,0.3)',
+                'rgba(252,187,161,0.4)',
+                'rgba(252,146,114,0.5)',
+                'rgba(251,106,74,0.6)',
+                'rgba(239,59,44,0.7)',
+                'rgba(203,24,29,0.8)',
+                'rgba(165,15,21,0.9)',
+                'rgba(103,0,13,1.0)'
+            ]
+            const windOptions = {
+                colorScale: ['rgba(255,245,240,0.1)'],
+                frameRate: 10,
+                maxAge: 60,
+                globalAlpha: 0.9,
+                velocityScale: 1 / 30,
+                paths: 300,
+                lineWidth: 0.2
+            }
+            let tempWindlayer = null
+            fetch('./wind.json')
+                .then(res => res.json())
+                .then(res => {
+                    tempWindlayer = new CesiumWind.WindLayer(res, {
+                        windOptions
+                    }, 0, false);
+                    tempWindlayer.addTo(viewer);
+                    windLayerGroup.push(tempWindlayer)
+                    return res
+                }).then(res => {
+                    let temp = 20000
+                    let tempWidth = 0.2
+                    for (let i = 0; i < 9; i++, temp += 20000, tempWidth += 0.2) {
+                        tempWindlayer = new CesiumWind.WindLayer(res, {
+                            colorScale: colorBar.slice(i, i + 1),
+                            frameRate: 10,
+                            maxAge: 60,
+                            globalAlpha: 0.9,
+                            velocityScale: 1 / 30,
+                            paths: 300,
+                            lineWidth: tempWidth
+                        }, temp, false);
+                        tempWindlayer.addTo(viewer);
+                        windLayerGroup.push(tempWindlayer)
+                    }
+                }); */
+            let colorBar = [
+                'rgba(255,245,240,0.2)',
+                'rgba(254,224,210,0.3)',
+                'rgba(252,187,161,0.4)',
+                'rgba(252,146,114,0.5)',
+                'rgba(251,106,74,0.6)',
+                'rgba(239,59,44,0.7)',
+                'rgba(203,24,29,0.8)',
+                'rgba(165,15,21,0.9)',
+                'rgba(103,0,13,1.0)'
+            ]
+            const windOptions = {
+                colorScale: ['rgba(255,245,240,0.1)'],
+                frameRate: 10,
+                maxAge: 60,
+                globalAlpha: 0.9,
+                velocityScale: 1 / 30,
+                paths: 300,
+                lineWidth: 0.2
+            }
+            let tempWindlayer = null
+            fetch('./data/wind.json')
+                .then(res => res.json())
+                .then(res => {
+                    tempWindlayer = new CesiumWind.WindLayer(res, {
+                        windOptions
+                    }, 0, false);
+                    tempWindlayer.addTo(viewer);
+                    windLayerGroup.push(tempWindlayer)
+                });
+            fetch('./data/20210720_gfs_1000pa_30000m.json')
+                .then(res => res.json())
+                .then(res => {
+                    tempWindlayer = new CesiumWind.WindLayer(res, {
+                        colorScale: ['rgba(103,0,13,1)'],
+                        frameRate: 10,
+                        maxAge: 60,
+                        globalAlpha: 0.9,
+                        velocityScale: 1 / 30,
+                        paths: 300,
+                        lineWidth: 3.0
+                    }, 30000);
+                    tempWindlayer.addTo(viewer);
+                    windLayerGroup.push(tempWindlayer)
+                });
+            fetch('./data/20210720_gfs_7000pa_18000m.json')
+                .then(res => res.json())
+                .then(res => {
+                    tempWindlayer = new CesiumWind.WindLayer(res, {
+                        colorScale: ['rgba(165,15,21,0.9)'],
+                        frameRate: 10,
+                        maxAge: 60,
+                        globalAlpha: 0.9,
+                        velocityScale: 1 / 30,
+                        paths: 300,
+                        lineWidth: 2.5
+                    }, 18000);
+                    tempWindlayer.addTo(viewer);
+                    windLayerGroup.push(tempWindlayer)
+                });
+            fetch('./data/20210720_gfs_25000pa_10000m.json')
+                .then(res => res.json())
+                .then(res => {
+                    tempWindlayer = new CesiumWind.WindLayer(res, {
+                        colorScale: ['rgba(203,24,29,0.8)'],
+                        frameRate: 10,
+                        maxAge: 60,
+                        globalAlpha: 0.9,
+                        velocityScale: 1 / 30,
+                        paths: 300,
+                        lineWidth: 2.0
+                    }, 10000);
+                    tempWindlayer.addTo(viewer);
+                    windLayerGroup.push(tempWindlayer)
+                });
+            fetch('./data/20210720_gfs_50000pa_5000m.json')
+                .then(res => res.json())
+                .then(res => {
+                    tempWindlayer = new CesiumWind.WindLayer(res, {
+                        colorScale: ['rgba(239,59,44,0.7)'],
+                        frameRate: 10,
+                        maxAge: 60,
+                        globalAlpha: 0.9,
+                        velocityScale: 1 / 30,
+                        paths: 300,
+                        lineWidth: 1.5
+                    }, 5000);
+                    tempWindlayer.addTo(viewer);
+                    windLayerGroup.push(tempWindlayer)
+                });
+            fetch('./data/20210720_gfs_70000pa_3000m.json')
+                .then(res => res.json())
+                .then(res => {
+                    tempWindlayer = new CesiumWind.WindLayer(res, {
+                        colorScale: ['rgba(252,146,114,0.5)'],
+                        frameRate: 10,
+                        maxAge: 60,
+                        globalAlpha: 0.9,
+                        velocityScale: 1 / 30,
+                        paths: 300,
+                        lineWidth: 1.0
+                    }, 3000);
+                    tempWindlayer.addTo(viewer);
+                    windLayerGroup.push(tempWindlayer)
+                });
+            fetch('./data/20210720_gfs_85000pa_1500m.json')
+                .then(res => res.json())
+                .then(res => {
+                    tempWindlayer = new CesiumWind.WindLayer(res, {
+                        colorScale: ['rgba(254,224,210,0.3)'],
+                        frameRate: 10,
+                        maxAge: 60,
+                        globalAlpha: 0.9,
+                        velocityScale: 1 / 30,
+                        paths: 300,
+                        lineWidth: 0.5
+                    }, 1500);
+                    tempWindlayer.addTo(viewer);
+                    windLayerGroup.push(tempWindlayer)
+                });
+        }
+
+        let currentLayer1 = null
+        let currentLayer2 = null
+        let iscurrent = false
+
+        function init2current() {
+            iscurrent = true
+
+            function hexToR(h) {
+                return parseInt((cutHex(h)).substring(0, 2), 16)
+            }
+
+            function hexToG(h) {
+                return parseInt((cutHex(h)).substring(2, 4), 16)
+            }
+
+            function hexToB(h) {
+                return parseInt((cutHex(h)).substring(4, 6), 16)
+            }
+
+            function cutHex(h) {
+                return (h.charAt(0) == "#") ? h.substring(1, 7) : h
+            }
+            const windOptions = {
+                colorScale: [
+                    /* "rgba(" + hexToR('#178be7') + ", " + hexToG('#178be7') + ", " + hexToB('#178be7') + ", " + 0.2 + ")",
+                    "rgba(" + hexToR('#178be7') + ", " + hexToG('#178be7') + ", " + hexToB('#178be7') + ", " + 0.4 + ")",
+                    "rgba(" + hexToR('#178be7') + ", " + hexToG('#178be7') + ", " + hexToB('#178be7') + ", " + 0.7 + ")",
+                    "rgba(" + hexToR('#178be7') + ", " + hexToG('#178be7') + ", " + hexToB('#178be7') + ", " + 0.8 + ")",
+                    "rgba(" + hexToR('#178be7') + ", " + hexToG('#178be7') + ", " + hexToB('#178be7') + ", " + 1 + ")" */
+                    'rgba(247, 252, 253, 0.2)',
+                    'rgba(247, 252, 253, 0.4)',
+                    'rgba(247, 252, 253, 0.6)',
+                    'rgba(247, 252, 253, 0.8)',
+                    'rgba(247, 252, 253, 1.0)'
+                ],
+                frameRate: 1,
+                maxAge: 60,
+                globalAlpha: 0.98,
+                velocityScale: 1,
+                paths: 1500
+            }
+            fetch('./data/hycom0.json')
+                .then(res => res.json())
+                .then(res => {
+                    currentLayer1 = new CesiumWind.WindLayer(res, {
+                        windOptions
+                    }, 0);
+                    currentLayer1.addTo(viewer);
+                })
+            fetch('./data/hycom5000.json')
+                .then(res => res.json())
+                .then(res => {
+                    currentLayer2 = new CesiumWind.WindLayer(res, {
+                        colorScale: [
+                            /* "rgba(" + hexToR('#178be7') + ", " + hexToG('#178be7') + ", " + hexToB('#178be7') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#8888bd') + ", " + hexToG('#8888bd') + ", " + hexToB('#8888bd') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#b28499') + ", " + hexToG('#b28499') + ", " + hexToB('#b28499') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#cc7e78') + ", " + hexToG('#cc7e78') + ", " + hexToB('#cc7e78') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#de765b') + ", " + hexToG('#de765b') + ", " + hexToB('#de765b') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#ec6c42') + ", " + hexToG('#ec6c42') + ", " + hexToB('#ec6c42') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#f55f2c') + ", " + hexToG('#f55f2c') + ", " + hexToB('#f55f2c') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#fb4f17') + ", " + hexToG('#fb4f17') + ", " + hexToB('#fb4f17') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#fe3705') + ", " + hexToG('#fe3705') + ", " + hexToB('#fe3705') + ", " + 1 + ")",
+                            "rgba(" + hexToR('#ff0000') + ", " + hexToG('#ff0000') + ", " + hexToB('#ff0000') + ", " + 1 + ")" */
+                            'rgb(140,107,177,0.5)',
+                            'rgb(136,65,157,0.5)',
+                            'rgb(129,15,124,0.5)',
+                            'rgb(77,0,75,0.5)'
+                        ],
+                        frameRate: 1,
+                        maxAge: 60,
+                        globalAlpha: 0.98,
+                        velocityScale: 1,
+                        paths: 1500
+                    }, -200000);
+                    currentLayer2.addTo(viewer);
+                })
+        }
+        /********GUI*********/
+        var ASSETS = new function() {
+            this.isBoth = isBoth
+            this.isCurrentBoth = isCurrentBoth
+            this.chooseVector = chooseVector
+            this.chooseDaynight = chooseDaynight
+            this.url = function() {
+                window.location = '../wind/CesiumWind.html'
+            }
+        };
+        var gui = new dat.GUI({
+            autoPlace: false
+        });
+        gui.domElement.id = 'gui'
+            //gui.remember(ASSETS);
+        var aFolder = gui.addFolder('通用设置');
+        aFolder.add(ASSETS, 'chooseVector', ['wind', 'current']).onChange(vector);
+        aFolder.add(ASSETS, 'chooseDaynight', ['day', 'night']).onChange(daynight);
+        var aFolder = gui.addFolder('多层次矢量场');
+        aFolder.add(ASSETS, 'isBoth').name('多层次风场').onChange(Both)
+        aFolder.add(ASSETS, 'isCurrentBoth').name('多层次流场').onChange(CurrentBoth)
+
+        var oFolder = gui.addFolder('其他')
+        oFolder.add(ASSETS, 'url').name('漂移模拟')
+        var customContainer = $('.moveGUI').append($(gui.domElement))
+    </script>
+
+</body>
+
+</html>

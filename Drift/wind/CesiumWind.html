@@ -1,0 +1,602 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head lang="en">
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no">
+    <title>CesiumWind-Cesium</title>
+    <!-- <link href="../Cesium/Widgets/widgets.css" rel="stylesheet" /> -->
+    <!-- <script src="../Cesium/Cesium.js"></script> -->
+    <!-- <script src="../Build/CesiumUnminified/Cesium.js"></script> -->
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.74/Build/Cesium/Cesium.js"></script>
+    <script src="./js/jquery.min.js"></script>
+    <script src="./js/dat.gui.js"></script>
+    <script src="./js/wind/Particle.js"></script>
+    <script src="./js/wind/WindField.js"></script>
+    <script src="./js/wind/Windy.js"></script>
+    <style>
+        @import url(../bucket.css);
+        /* html,
+        body,
+        #cesiumContainer {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }*/
+        /* #menu {
+            position: absolute;
+            top: 80px;
+            left: 10px;
+            z-index: 999;
+        } */
+        
+        .moveGUI {
+            position: absolute;
+            top: 6em;
+            left: 1em;
+            z-index: 999
+        }
+    </style>
+</head>
+
+<body>
+    <div class='moveGUI'>
+    </div>
+    <div id="latlng_show" style="width: 400px;height: 50px;position:absolute;z-index:1;font-size:15px;background-color:rgba(0,0,0,0.7)">
+        <div style="width:100px;height:30px;float:left;">
+            <font id="index1" size="3" color="white">经度：<br><span id="longitude_show"></span></font>
+        </div>
+        <div style="width:100px;height:30px;float:left;">
+            <font id="index2" size="3" color="white">纬度：<br><span id="latitude_show"></span></font>
+        </div>
+        <div style="width:100px;height:30px;float:left;">
+            <font id="index4" size="3" color="white">高程：<br><span id="height_show"></span></font>
+        </div>
+        <div style="width:100px;height:30px;float:right;">
+            <font id="index3" size="3" color="white">视角高：<br></nav><span id="altitude_show"></span>km</font>
+        </div>
+    </div>
+    <div id="cesiumContainer" class="fullSize"></div>
+    <div id="creditContainer" style="display: none;"></div>
+    <span style="white-space:pre"></span>
+
+    <script>
+        /*******************cesium初始化****************************/
+        Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJjYjZiMzA4Mi1lZGYzLTQ5MTMtYjE4Ny02NjYwZjVlZjQ0MGUiLCJpZCI6NDQ5MTEsImlhdCI6MTYxNDU4MTIzNH0.x1QYKlHj6mOMRIqVXeZ1gMt0akK1eMaLqJhaEYsz27Y';
+
+        var night = new Cesium.IonImageryProvider({
+            assetId: 3812
+        });
+        var viewer = new Cesium.Viewer('cesiumContainer', {
+            /* imageryProvider: new Cesium.SingleTileImageryProvider({
+                url: './pic/world.jpg'
+            }), */ //黑色地球
+            imageryProvider: new Cesium.TileMapServiceImageryProvider({
+                url: Cesium.buildModuleUrl("../Cesium/Assets/Textures/NaturalEarthII"),
+            }),
+            selectionIndicator: true,
+            animation: true,
+            baseLayerPicker: true,
+            timeline: false,
+            sceneModePicker: true,
+            navigationHelpButton: false,
+            infoBox: false,
+            fullscreenButton: true,
+            vrButton: true,
+            /* terrainProvider: new Cesium.CesiumTerrainProvider({
+                url: Cesium.IonResource.fromAssetId(1),
+                requestWaterMask: true,
+                requestVertexNormals: true
+            }), */ //cesium地形
+            terrainProvider: new Cesium.CesiumTerrainProvider({
+                url: Cesium.IonResource.fromAssetId(638077)
+            }), //etopo地形
+
+        });
+        /*********大气设置***********/
+        viewer.scene.globe.enableLighting = true;
+        viewer.scene.skyAtmosphere.show = false;
+        viewer.scene.globe.showGroundAtmosphere = false; //close ground atmosphere
+        viewer.scene.globe.depthTestAgainstTerrain = false
+            //正射or透视投影viewer.scene.camera.frustum = new Cesium.PerspectiveFrustum()
+            /*******timer********/
+        let date = new Date();
+        //可返回格林威治时间和本地时间之间的时差
+        let h = 0 - date.getTimezoneOffset();
+        //设置时间
+        viewer.animation.viewModel.timeFormatter = function(date, viewModel) {
+            //return Cesium.sprintf("")
+            //重新构造一个当前系统时间的儒略日
+            let dateZone = Cesium.JulianDate.addMinutes(date, h, new Cesium.JulianDate());
+            let gregorianDate = Cesium.JulianDate.toGregorianDate(dateZone);
+            let millisecond = Math.round(gregorianDate.millisecond); //倍速是否小于1，小于1则显示毫秒级
+            if (Math.abs(viewModel._clockViewModel.multiplier) < 1) {
+                return Cesium.sprintf("%02d:%02d:%02d.%03d", gregorianDate.hour, gregorianDate.minute, gregorianDate.second, gregorianDate.millisecond);
+            }
+            return Cesium.sprintf("%02d:%02d:%02d", gregorianDate.hour, gregorianDate.minute, gregorianDate.second);
+        };
+        //设置日期
+        viewer.animation.viewModel.dateFormatter = function(date, viewModel) {
+            let dateZone = Cesium.JulianDate.addMinutes(date, h, new Cesium.JulianDate());
+            let gregorianDate = Cesium.JulianDate.toGregorianDate(dateZone); //设置格式为xx/xx/xx，格式可自定义为任意你想要的
+            return Cesium.sprintf("%4d-%02d-%02d", gregorianDate.year, gregorianDate.month, gregorianDate.day);
+        };
+
+        /****************************初始化数据***************************/
+        var windy;
+        Init();
+        var json = []
+
+        function Init() {
+            /* $.getJSON('./sampledata/vector/wind.json', function(response) {
+                viewer.scene.globe.showGroundAtmosphere = false; //close ground atmosphere
+                json.push(response[0], response[1])
+                console.log(json)
+                windy = new Windy(json, viewer);
+            });
+            $.getJSON('./sampledata/vector/20211220.json', function(response) {
+                json.push(response[0], response[1])
+                console.log(json)
+                windy = new Windy(json, viewer);
+            }); */
+            let commonUrl = './data/',
+                windUrl,
+                currentUrl
+
+            for (let i = 1; i < 6; i++) {
+                let tempJson = []
+                windUrl = commonUrl + 'wind' + i + '.json'
+                currentUrl = commonUrl + 'hycom' + i + '.json' //hycom or current(oscar)
+                $.getJSON(windUrl, function(response) {
+                    tempJson.push(response[0], response[1])
+                });
+                $.getJSON(currentUrl, function(response) {
+                    tempJson.push(response[0], response[1])
+                    json.push(tempJson)
+                    windy = new Windy(json, viewer)
+                });
+            }
+            /* $.ajax({
+                type: "get",
+                url: "./sampledata/wind/2017121300.json", // 
+                dataType: "json",
+                success: function(response) {
+                    var header = response[0].header;
+                    windy = new Windy(response, viewer);
+                    redraw();
+                },
+                error: function(errorMsg) {
+                    alert("请求数据失败1!");
+                }
+            }); */
+
+        }
+
+        let i = 1
+
+        function redraw(x1, y1, x2, y2) {
+            windy._init(x1, y1, x2, y2);
+            timer = setInterval(function() {
+                windy.animate();
+            }, 4);
+        }
+
+        /**************button事件*******************/
+        /********不确定性***********/
+        var isUCT = false
+
+        function UCT() {
+            if (!isUCT) {
+                isUCT = true;
+            } else {
+                isUCT = false;
+            }
+        }
+        /******AC********/
+        let isAc = false
+
+        function AC() {
+            if (!isAc) {
+                isAc = true
+            } else {
+                isAc = false
+            }
+        }
+
+        /*********+or-***********/
+        let isNeg = false
+
+        function posOrNeg() {
+            if (!isNeg) {
+                isNeg = true;
+            } else {
+                isNeg = false;
+            }
+        }
+        /********框选***********/
+        let rect = false
+
+        function rectselect() {
+            if (!isRect) {
+                isRect = true
+                rect = true
+                viewer.scene.screenSpaceCameraController.enableInputs = false
+            } else {
+                viewer.clock.currentTime = Cesium.JulianDate.fromDate(new Date(2018, 10, 11, 2))
+                viewer.clock.shouldAnimate = false
+                fieldGroup = []
+                rectInstances = []
+                PARTICLES_NUMBER = 1
+                viewer.scene.screenSpaceCameraController.enableInputs = true
+                isRect = false;
+                rect = false;
+                windy.removeAll();
+                clearInterval(timer);
+                createWater()
+            }
+        }
+
+        /********相机运动********/
+        let isfly = false;
+
+        function Fly(obj) {
+            if (obj.innerHTML == 'Fly') {
+                viewer.clock.onTick.addEventListener(onTickCallback);
+                isfly = true;
+                obj.innerHTML = 'Cancel';
+            } else {
+                viewer.clock.onTick.removeEventListener(onTickCallback);
+                isfly = false;
+                obj.innerHTML = 'Fly';
+            }
+        }
+
+        function onTickCallback() {
+            viewer.scene.camera.moveForward(10);
+        }
+
+        /*********流场覆盖**********/
+        let isCover = false
+
+        function Cover() {
+            if (!isCover) {
+                isCover = true;
+                windy._init()
+            } else {
+                isCover = false;
+                windy.removeAll();
+                clearInterval(timer);
+                createWater()
+            }
+        }
+
+        /********风模拟***********/
+        var isWindFlow = false
+
+        function windFlow() {
+            if (!isWindFlow) {
+                isWindFlow = true;
+            } else {
+                isWindFlow = false;
+            }
+        }
+        /**********绘制***********/
+        let isdraw = false;
+
+        function Draw() {
+            if (!isdraw) {
+                redraw();
+                isdraw = true;
+            } else {
+                clearInterval(timer);
+                fieldGroup = []
+                viewer.clock.shouldAnimate = false
+                viewer.clock.currentTime = Cesium.JulianDate.fromDate(new Date(2021, 10, 11, 0))
+                UCTFirst = true
+                isdraw = false;
+                windy.removeAll();
+                createWater()
+            }
+        }
+
+        var timer = null;
+        var height = 0;
+
+        function seth() {
+            height = parseInt(document.getElementById('height').value);
+        }
+        /*****************添加单击和双击事件*********************/
+        var handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+        //鼠标左键双击
+        handler.setInputAction(function(click) {
+            var earthPosition = viewer.scene.camera.pickEllipsoid(click.position, viewer.scene.globe.ellipsoid);
+            if (Cesium.defined(earthPosition)) {
+                //根据笛卡尔坐标获取到弧度
+                var cartographic = Cesium.Cartographic.fromCartesian(earthPosition);
+                //将地图坐标（弧度）转为十进制的度数
+                var lat_String = Cesium.Math.toDegrees(cartographic.latitude).toFixed(4);
+                var log_String = Cesium.Math.toDegrees(cartographic.longitude).toFixed(4);
+                var alti_String = (viewer.camera.positionCartographic.height / 1000).toFixed(2);
+            }
+            console.log('左键双击事件：', log_String, lat_String);
+            redraw(log_String, lat_String)
+            isdraw = true;
+        }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
+
+        let [left, right, up, bottom] = [0, 0, 0, 0]
+        //左键按下
+        handler.setInputAction(function(click) {
+            var earthPosition = viewer.scene.camera.pickEllipsoid(click.position, viewer.scene.globe.ellipsoid);
+            if (Cesium.defined(earthPosition)) {
+                //根据笛卡尔坐标获取到弧度
+                var cartographic = Cesium.Cartographic.fromCartesian(earthPosition);
+                //将地图坐标（弧度）转为十进制的度数
+                up = Cesium.Math.toDegrees(cartographic.latitude).toFixed(4);
+                left = Cesium.Math.toDegrees(cartographic.longitude).toFixed(4);
+                var alti_String = (viewer.camera.positionCartographic.height / 1000).toFixed(2);
+            }
+        }, Cesium.ScreenSpaceEventType.LEFT_DOWN);
+
+        //左键抬起
+        handler.setInputAction(function(click) {
+            var earthPosition = viewer.scene.camera.pickEllipsoid(click.position, viewer.scene.globe.ellipsoid);
+            if (Cesium.defined(earthPosition)) {
+                //根据笛卡尔坐标获取到弧度
+                var cartographic = Cesium.Cartographic.fromCartesian(earthPosition);
+                //将地图坐标（弧度）转为十进制的度数
+                bottom = Cesium.Math.toDegrees(cartographic.latitude).toFixed(4);
+                right = Cesium.Math.toDegrees(cartographic.longitude).toFixed(4);
+                var alti_String = (viewer.camera.positionCartographic.height / 1000).toFixed(2);
+            }
+            if (isRect && rect) {
+                if (+left < 0 && +right > 0) {
+                    left = +left
+                    right = +right
+                } else {
+                    left = (360 + (+left)) % 360
+                    right = (360 + (+right)) % 360
+                }
+                up = +up
+                bottom = +bottom
+                console.log(left, right, up, bottom)
+                var instance = new Cesium.GeometryInstance({
+                    geometry: new Cesium.CircleOutlineGeometry({
+                        center: Cesium.Cartesian3.fromDegrees(Math.floor(((left) + (right)) / 2), Math.floor(((bottom) + (up)) / 2)),
+                        radius: (up - bottom) * Math.PI * 1000 * 6371 / 180
+                    }),
+                    /* new Cesium.RectangleGeometry({
+                        rectangle: Cesium.Rectangle.fromDegrees(left, bottom, right, up),
+                        vertexFormat: Cesium.PerInstanceColorAppearance.VERTEX_FORMAT,
+                        height: 10000
+                    }), */
+                    attributes: {
+                        color: new Cesium.ColorGeometryInstanceAttribute(1, 1, 1, 1 /* 0.92, 0.97, 0.7, 0.5 */ )
+                    }
+                });
+                viewer.scene.primitives.add(new Cesium.Primitive({
+                    geometryInstances: [instance],
+                    appearance: new Cesium.PerInstanceColorAppearance({
+                            flat: true,
+                            translucent: false,
+                            renderState: {
+                                lineWidth: Math.min(4.0, viewer.scene.maximumAliasedLineWidth) //此处的lineWidth怎么都改不到，好像时个固定值 1px
+                            }
+                        })
+                        /* new Cesium.PerInstanceColorAppearance() */
+                }));
+                let lon
+                if (+left > 0 && +right < 0) {
+                    lon = +left + Math.floor((180 - (+left) + (+right) + 180) / 2)
+                    if (lon > 180) {
+                        lon = -(180 - (lon - 180))
+                    }
+                } else {
+                    lon = Math.floor(((+left) + (+right)) / 2)
+                }
+                /* viewer.camera.flyTo({
+                    destination: Cesium.Cartesian3.fromDegrees(lon, ((+bottom) + (+up)) / 2, 4000000)
+                }); */
+
+                viewer.scene.screenSpaceCameraController.enableInputs = true
+            }
+            /* if (left < 0) {
+                left = Math.ceil(360 + (+left))
+            }
+            if (right < 0) {
+                right = Math.floor(360 + (+right))
+            } */
+            up = Math.ceil(90 - (+up))
+            bottom = Math.floor(90 - (+bottom))
+            if (isRect && rect) {
+                redraw(+Math.ceil(left), +up, +Math.floor(right), +bottom)
+            }
+        }, Cesium.ScreenSpaceEventType.LEFT_UP);
+
+        /***************相机设置*****************/
+        /* viewer.scene.screenSpaceCameraController._minimumZoomRate = 30000; // 设置相机缩小时的速率
+        viewer.scene.screenSpaceCameraController.minimumZoomDistance = 1;
+        var camera = viewer.camera;
+        camera.setView({
+            destination: Cesium.Cartesian3.fromDegrees(114.3537, 30.5299, 500), 
+            orientation: {
+                heading: Cesium.Math.toRadians(0),
+                pitch: Cesium.Math.toRadians(-30),
+                roll: Cesium.Math.toRadians(0),
+            },
+        }); */
+
+
+        /****************************加水面*************************************/
+        /*******部分区域waterface******/
+        /* var waterFace = [
+            114.3537, 30.5299, 0,
+            114.3540, 30.5299, 0,
+            114.3542, 30.5299, 0,
+            114.3545, 30.5298, 0,
+            114.3546, 30.5297, 0,
+            114.3546, 30.5294, 0,
+            114.3542, 30.5294, 0,
+            114.3541, 30.5294, 0,
+            114.3539, 30.5295, 0,
+            114.3538, 30.5296, 0,
+            114.3537, 30.5297, 0,
+            132.0, 30.0, 0,
+            132.0, 8.0, 0,
+            160.0, 8.0, 0,
+            160.0, 30.0, 0,
+            175, 90, 0, 175, 30, 0, -175, 30, 0, -175, 90, 0
+        ]; */
+
+        /*********全球waterface************/
+        var waterface = []
+        for (let i = 0; i < 36; i++) {
+            for (let j = 0; j < 3; j++) {
+                let tempArray = [
+                    (0 + i * 10) > 180 ? 0 + i * 10 - 360 : 0 + i * 10, 90 - j * 60, 0,
+                    (0 + i * 10) > 180 ? 0 + i * 10 - 360 : 0 + i * 10, 90 - (j + 1) * 60, 0,
+                    (0 + (i + 1) * 10) > 180 ? 0 + (i + 1) * 10 - 360 : 0 + (i + 1) * 10, 90 - (j + 1) * 60, 0,
+                    (0 + (i + 1) * 10) > 180 ? 0 + (i + 1) * 10 - 360 : 0 + (i + 1) * 10, 90 - j * 60, 0,
+                ]
+                let tempGeometry = new Cesium.GeometryInstance({
+                    geometry: new Cesium.PolygonGeometry({
+                        polygonHierarchy: new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArrayHeights(tempArray)),
+                    })
+                })
+                waterface.push(tempGeometry)
+            }
+        }
+
+        var waterPrimitive
+
+        function createWater() {
+            return 0
+            waterPrimitive = new Cesium.Primitive({ //GroundPrimitive贴地
+                show: true, // 默认隐藏
+                allowPicking: false,
+                geometryInstances: waterface,
+                /* new Cesium.GeometryInstance({
+                                   geometry: new Cesium.PolygonGeometry({
+                                       polygonHierarchy: new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArrayHeights(waterFace)),
+                                       //extrudedHeight: 0, //注释掉此属性可以只显示水面
+                                       //perPositionHeight: true //注释掉此属性水面就贴地了
+                                   })
+                               }), */
+                // 可以设置内置的水面shader
+                appearance: new Cesium.EllipsoidSurfaceAppearance({
+                    material: new Cesium.Material({
+                        fabric: {
+                            type: 'Water',
+                            uniforms: {
+                                baseWaterColor: new Cesium.Color(89 / 255, 148 / 255, 236 / 255, 0.1),
+                                blendColor: new Cesium.Color(0.0, 0.0, 1.0, 0.3),
+                                normalMap: "./pic/water.jpg",
+                                frequency: 100000,
+                                animationSpeed: 0.01,
+                                amplitude: 1.0,
+                                specularIntensity: 2,
+                                fadeFactor: 2.0
+                            }
+                        }
+                    }),
+                })
+            });
+            viewer.scene.primitives.add(waterPrimitive);
+        }
+        createWater()
+
+        /********************************经纬度，高度显示*******************************/
+
+        var longitude_show = document.getElementById('longitude_show');
+        var latitude_show = document.getElementById('latitude_show');
+        var altitude_show = document.getElementById('altitude_show');
+        var height_show = document.getElementById('height_show');
+
+        //具体事件的实现
+        var ellipsoid = viewer.scene.globe.ellipsoid;
+        handler.setInputAction(function(movement) {
+            //捕获椭球体，将笛卡尔二维平面坐标转为椭球体的笛卡尔三维坐标，返回球体表面的点
+            let ray = viewer.camera.getPickRay(movement.endPosition);
+            var cartesian = viewer.scene.globe.pick(ray, this.viewer.scene); /* viewer.camera.pickEllipsoid(movement.endPosition, ellipsoid); */
+            if (cartesian) {
+                //将笛卡尔三维坐标转为地图坐标（弧度）
+                var cartographic = viewer.scene.globe.ellipsoid.cartesianToCartographic(cartesian);
+                //将地图坐标（弧度）转为十进制的度数
+                var lat_String = Cesium.Math.toDegrees(cartographic.latitude).toFixed(4);
+                var log_String = Cesium.Math.toDegrees(cartographic.longitude).toFixed(4);
+                var alti_String = (viewer.camera.positionCartographic.height / 1000).toFixed(2);
+                var hei_String = viewer.scene.globe.getHeight(cartographic).toFixed(2)
+                height_show.innerHTML = hei_String + 'm';
+                longitude_show.innerHTML = log_String;
+                latitude_show.innerHTML = lat_String;
+                altitude_show.innerHTML = alti_String;
+                /* if (alti_String < 1000) {
+                    waterPrimitive.show = true
+                } else {
+                    waterPrimitive.show = false
+                } */
+                if (alti_String < 0) {
+                    document.getElementById('index1').style.color = 'green';
+                    document.getElementById('index2').style.color = 'green';
+                    document.getElementById('index3').style.color = 'green';
+                } else {
+                    document.getElementById('index1').style.color = 'white';
+                    document.getElementById('index2').style.color = 'white';
+                    document.getElementById('index3').style.color = 'white';
+                }
+            }
+        }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+        handler.setInputAction(function(wheelment) {
+            var alti_String = (viewer.camera.positionCartographic.height / 1000).toFixed(2);
+            altitude_show.innerHTML = alti_String;
+            if (alti_String < 0) {
+                document.getElementById('index1').style.color = 'green';
+                document.getElementById('index2').style.color = 'green';
+                document.getElementById('index3').style.color = 'green';
+            } else {
+                document.getElementById('index1').style.color = 'white';
+                document.getElementById('index2').style.color = 'white';
+                document.getElementById('index3').style.color = 'white';
+            }
+        }, 16);
+
+
+        /*****************GUI*********************/
+        var ASSETS = new function() {
+            this.draw = Draw
+            this.Rect = isRect
+            this.isWindFlow = isWindFlow
+            this.isNeg = isNeg
+            this.isCover = isCover
+            this.isAc = isAc
+            this.isUCT = isUCT
+            this.url = function() {
+                window.location = '../field/umd.html'
+            }
+
+        };
+        var gui = new dat.GUI({
+            autoPlace: false
+        });
+        gui.domElement.id = 'gui'
+            //gui.remember(ASSETS);
+
+        var aFolder = gui.addFolder('漂移');
+        aFolder.add(ASSETS, 'Rect').name('区域选择').onChange(rectselect)
+        aFolder.add(ASSETS, 'isWindFlow').name('WindFlow').onChange(windFlow)
+        aFolder.add(ASSETS, 'isNeg').name('回溯').onChange(posOrNeg)
+        aFolder.add(ASSETS, 'isAc').name('加速度模型').onChange(AC)
+        aFolder.add(ASSETS, 'isUCT').name('不确定性分析').onChange(UCT)
+        aFolder.add(ASSETS, 'draw').name('Remove')
+
+        var oFolder = gui.addFolder('其他');
+        oFolder.add(ASSETS, 'isCover').name('流场覆盖').onChange(Cover)
+        oFolder.add(ASSETS, 'url').name('矢量场可视化')
+        var customContainer = $('.moveGUI').append($(gui.domElement))
+    </script>
+</body>
+
+</html>
